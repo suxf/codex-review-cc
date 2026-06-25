@@ -20,7 +20,7 @@
   传给 claude --model 的别名，如 sonnet/opus。
 
 .PARAMETER DryRun
-  仅做 VCS/Files 探测与可审核性判定，不调用 Claude Code。用于循环审核的首轮前置校验，避免浪费 API 调用。
+  仅做 VCS/Files 探测与可审核性判定，不调用 Claude Code。用于试跑或循环审核前置校验，避免浪费 API 调用。
 #>
 [CmdletBinding()]
 param(
@@ -55,7 +55,7 @@ if (-not (Test-Path $PromptFile)) {
 # 读取设计思路
 $context = '（未提供设计思路，仅依据 diff 审查）'
 if ($ContextFile -and (Test-Path $ContextFile)) {
-    $context = (Get-Content $ContextFile -Raw -Encoding UTF8).Trim()
+    $context = (Get-Content $ContextFile -Raw -Encoding UTF8).TrimStart([char]0xFEFF).Trim()
 }
 
 # 探测 VCS 类型：先 git，再 svn
@@ -195,20 +195,22 @@ if ($Vcs) {
     Write-Host $stat
 }
 # 组装 prompt：用单次替换注入占位符
-$template = Get-Content $PromptFile -Raw -Encoding UTF8
+$template = (Get-Content $PromptFile -Raw -Encoding UTF8).TrimStart([char]0xFEFF)
 # 两阶段替换，彻底防止输入内容含哨兵时被二次替换
-# 阶段 1：模板占位符 → 临时唯一标记
+$g1 = [guid]::NewGuid().ToString(); $g2 = [guid]::NewGuid().ToString()
+$g3 = [guid]::NewGuid().ToString(); $g4 = [guid]::NewGuid().ToString()
+# 阶段 1：模板占位符 → GUID 临时标记
 $stage1 = $template.
-    Replace('__REVIEW_CONTEXT__',   " CTX ").
-    Replace('__REVIEW_VCS__',       " VCS ").
-    Replace('__REVIEW_SCOPE__',    " SCP ").
-    Replace('__REVIEW_CHANGES__',   " CHG ")
-# 阶段 2：临时标记 → 实际值
+    Replace('__REVIEW_CONTEXT__', $g1).
+    Replace('__REVIEW_VCS__',     $g2).
+    Replace('__REVIEW_SCOPE__',   $g3).
+    Replace('__REVIEW_CHANGES__',  $g4)
+# 阶段 2：GUID 标记 → 实际值
 $prompt = $stage1.
-    Replace(" CTX ", $context).
-    Replace(" VCS ", $(if ($Vcs) { $Vcs } else { '无' })).
-    Replace(" SCP ", $scope).
-    Replace(" CHG ", $changeSection)
+    Replace($g1, $context).
+    Replace($g2, $(if ($Vcs) { $Vcs } else { '无' })).
+    Replace($g3, $scope).
+    Replace($g4, $changeSection)
 
 # DryRun 模式：仅探测可审核性，不调用 Claude Code
 if ($DryRun) {
@@ -228,7 +230,11 @@ try {
     if ($null -eq $exitCode -or $exitCode -eq 0) { $exitCode = $ExitOK } else { $exitCode = $ExitErr }
 
     # 格式校验：检测四个标记行是否存在
-    $hasMarkers = ($rawOutput -split "`n") | Where-Object { $_.Trim() -in @('!!!REVIEW-RESULT!!!','!!!CRITICAL!!!','!!!WARNING!!!','!!!SUGGESTION!!!') } | Measure-Object | ForEach-Object { $_.Count -eq 4 }
+    $lines = $rawOutput -split "`n"
+$hasMarkers = (($lines | Where-Object { $_.Trim() -eq '!!!REVIEW-RESULT!!!' }).Count -ge 1) -and
+              (($lines | Where-Object { $_.Trim() -eq '!!!CRITICAL!!!' }).Count -ge 1) -and
+              (($lines | Where-Object { $_.Trim() -eq '!!!WARNING!!!' }).Count -ge 1) -and
+              (($lines | Where-Object { $_.Trim() -eq '!!!SUGGESTION!!!' }).Count -ge 1)
     if (-not $hasMarkers) {
         Write-Host ""
         Write-Host "=== Claude Code 原始输出 ===" -ForegroundColor Yellow
