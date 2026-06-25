@@ -93,7 +93,7 @@ if ($Vcs -eq 'git') {
                 }
             }
             # 白名单校验：只允许分支名/tag/commit ref 中的合法字符
-            if ($Base -notmatch '^[A-Za-z0-9._/\-]+$') {
+            if ($Base -notmatch '^[A-Za-z0-9._/][A-Za-z0-9._/\-]*$') {
                 Write-Host "Base 包含非法字符，仅允许字母、数字、点、下划线、斜杠、连字符。" -ForegroundColor Red
                 exit $ExitErr
             }
@@ -125,7 +125,7 @@ if ($Vcs -eq 'git') {
         'commit'  { $diffArgs += @('-r','PREV:HEAD');  $scope = '相对上一修订版本的改动' }
         'base'    {
             if (-not $Base) { $Base = 'PREV' }
-            if ($Base -notmatch '^[A-Za-z0-9_:\-]+$') {
+            if ($Base -notmatch '^[A-Za-z0-9_:][A-Za-z0-9_:\-]*$') {
                 Write-Host "Base 包含非法字符，仅允许字母、数字、下划线、冒号、连字符。" -ForegroundColor Red
                 exit $ExitErr
             }
@@ -193,44 +193,39 @@ Write-Host "正在调用 Claude Code 进行审核，请稍候..." -ForegroundCol
 
 # 组装 prompt：用单次替换注入占位符
 $template = Get-Content $PromptFile -Raw -Encoding UTF8
+# 用唯一哨兵替换，避免输入内容含占位符时被二次替换
 $prompt = $template.
-    Replace('{context}', $context).
-    Replace('{vcs_type}', $(if ($Vcs) { $Vcs } else { '无' })).
-    Replace('{scope}', $scope).
-    Replace('{change_section}', $changeSection)
+    Replace('__REVIEW_CONTEXT__', $context).
+    Replace('__REVIEW_VCS__', $(if ($Vcs) { $Vcs } else { '无' })).
+    Replace('__REVIEW_SCOPE__', $scope).
+    Replace('__REVIEW_CHANGES__', $changeSection)
 
-# 临时 prompt 文件，try/finally 保证清理
-$tempPrompt = Join-Path $env:TEMP "review-cc-prompt-$(Get-Random).txt"
-$utf8Enc = New-Object System.Text.UTF8Encoding $false
+$exitCode = $ExitErr  # 预设错误，异常路径不会误返回 0
 try {
-    $exitCode = $ExitErr  # 预设错误，异常路径不会误返回 0
-    [System.IO.File]::WriteAllText($tempPrompt, $prompt, $utf8Enc)
-    $promptContent = $prompt  # 直接复用变量，省去磁盘往返
-
     # 非交互调用 claude，仅允许只读工具（diff 已嵌入 prompt，无需 Bash）
-    $claudeArgs = @('-p', $promptContent, '--allowedTools', 'Read', 'Glob', 'Grep')
+    $claudeArgs = @('-p', $prompt, '--allowedTools', 'Read', 'Glob', 'Grep')
     if ($Model) { $claudeArgs += @('--model', $Model) }
 
     $rawOutput = & claude @claudeArgs 2>&1 | Out-String
     $exitCode = $LASTEXITCODE
-    if (-not $exitCode) { $exitCode = $ExitOK }
+    if ($null -eq $exitCode -or $exitCode -eq 0) { $exitCode = $ExitOK }
 
-    # 格式校验：检测标记是否存在
-    $hasMarkers = $rawOutput -match '!!!REVIEW-RESULT!!!' -and $rawOutput -match '!!!CRITICAL!!!' -and $rawOutput -match '!!!WARNING!!!' -and $rawOutput -match '!!!SUGGESTION!!!'
+    # 格式校验：检测四个标记行是否存在
+    $hasMarkers = ($rawOutput -split "`n") | Where-Object { $_.Trim() -in @('!!!REVIEW-RESULT!!!','!!!CRITICAL!!!','!!!WARNING!!!','!!!SUGGESTION!!!') } | Measure-Object | ForEach-Object { $_.Count -eq 4 }
     if (-not $hasMarkers) {
         Write-Host ""
         Write-Host "=== Claude Code 原始输出 ===" -ForegroundColor Yellow
         Write-Host $rawOutput
         Write-Host "=== 格式校验失败 ===" -ForegroundColor Red
-        Write-Host "审核输出缺少必要的标记行（!!!REVIEW-RESULT!!! / !!!CRITICAL!!! / !!!WARNING!!! / !!!SUGGESTION!!!），无法程序化提取。" -ForegroundColor Red
+        Write-Host "审核输出缺少必要的标记行，无法程序化提取。" -ForegroundColor Red
         Write-Host "请人工查看上方原始输出。" -ForegroundColor Yellow
         $exitCode = $ExitErr
     } else {
-        Write-Host $rawOutput
+        Write-Output $rawOutput
     }
 }
-finally {
-    try { Remove-Item $tempPrompt -Force -ErrorAction Stop }
-    catch { Write-Warning "临时文件清理失败: $tempPrompt" }
+catch {
+    $exitCode = $ExitErr
+    Write-Host "调用 Claude Code 时发生异常: $_" -ForegroundColor Red
 }
 exit $exitCode

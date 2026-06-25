@@ -45,8 +45,12 @@ description: 调用本机 Claude Code CLI 对当前工作区的代码改动进�
 | 退出码 | 含义               |
 |--------|--------------------|
 | 0      | 审核完成           |
-| 1      | 错误               |
+| 1      | 错误（含格式校验失败） |
 | 2      | 所选范围无改动     |
+
+## 输出契约
+
+脚本调用 Claude Code 后会校验输出中是否包含四个标记行（`!!!REVIEW-RESULT!!!`、`!!!CRITICAL!!!`、`!!!WARNING!!!`、`!!!SUGGESTION!!!`）。缺少任一标记行时，脚本打印原始输出并返回 exit 1。
 
 ## 审核范围（VCS 模式）
 
@@ -74,4 +78,4 @@ description: 调用本机 Claude Code CLI 对当前工作区的代码改动进�
 
 ## Prompt 模板
 
-审核标准与输出格式定义在 `references/review_prompt.md`，包含 `{context}`、`{vcs_type}`、`{scope}`、`{change_section}` 四个占位符，脚本读取后注入实际内容。如需调整审核维度或输出格式，编辑该文件即可。
+审核标准与输出格式定义在 `references/review_prompt.md`，包含 `__REVIEW_CONTEXT__`、`__REVIEW_VCS__`、`__REVIEW_SCOPE__`、`__REVIEW_CHANGES__` 四个哨兵占位符，脚本读取后注入实际内容。如需调整审核维度或输出格式，编辑该文件即可。

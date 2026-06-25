@@ -20,14 +20,14 @@
 
 ## 本次功能设计思路
 
-{context}
+__REVIEW_CONTEXT__
 
 ## 变更信息
 
-- 版本控制：{vcs_type}
-- 审核范围：{scope}
+- 版本控制：__REVIEW_VCS__
+- 审核范围：__REVIEW_SCOPE__
 
-{change_section}
+__REVIEW_CHANGES__
 
 ## 审查步骤
 
