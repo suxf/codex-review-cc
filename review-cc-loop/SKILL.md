@@ -21,7 +21,7 @@ description: 循环审核模式。调用本机 Claude Code CLI 对当前工作�
 
 ### 每一轮的执行步骤
 
-0. 前置校验（仅首轮）：运行一次 `review.ps1`（ContextFile 传空内容）。VCS 仓库：exit 0 进入循环，exit 1 报错停止，exit 2 无改动停止。非 VCS 目录：必须指定 `-Files` 参数，否则脚本 exit 1（错误）。后续轮跳过此校验直接进入步骤 1。
+0. 前置校验（仅首轮）：运行 `review.ps1 -DryRun`（不调用 Claude Code，仅探测 VCS/Files 可审核性）。exit 0 进入循环，exit 1 报错停止，exit 2 无改动停止。后续轮跳过此校验直接进入步骤 1。
 1. 准备 ContextFile，使用随机文件名（如 `work/review-context-$(Get-Random).txt`），写入以下内容：每轮审核结束后立即删除该轮的 ContextFile，不依赖循环结束统一清理。
    - 本次功能的设计思路与变更说明
    - 当前是第 N 轮审核（首轮写"第 1 轮"）

@@ -18,6 +18,9 @@
 
 .PARAMETER Model
   传给 claude --model 的别名，如 sonnet/opus。
+
+.PARAMETER DryRun
+  仅做 VCS/Files 探测与可审核性判定，不调用 Claude Code。用于循环审核的首轮前置校验，避免浪费 API 调用。
 #>
 [CmdletBinding()]
 param(
@@ -26,7 +29,9 @@ param(
     [ValidateSet('changes','staged','commit','base')]
     [string]$Target = 'changes',
     [string]$Base = '',
-    [string]$Model = ''
+    [string]$Model = '',
+
+    [switch]$DryRun
 )
 
 # 退出码约定：0=审核完成；1=错误；2=所选范围无改动
@@ -189,26 +194,38 @@ if ($Vcs) {
     Write-Host "改动概览：" -ForegroundColor Cyan
     Write-Host $stat
 }
-Write-Host "正在调用 Claude Code 进行审核，请稍候..." -ForegroundColor Cyan
-
 # 组装 prompt：用单次替换注入占位符
 $template = Get-Content $PromptFile -Raw -Encoding UTF8
-# 用唯一哨兵替换，避免输入内容含占位符时被二次替换
-$prompt = $template.
-    Replace('__REVIEW_CONTEXT__', $context).
-    Replace('__REVIEW_VCS__', $(if ($Vcs) { $Vcs } else { '无' })).
-    Replace('__REVIEW_SCOPE__', $scope).
-    Replace('__REVIEW_CHANGES__', $changeSection)
+# 两阶段替换，彻底防止输入内容含哨兵时被二次替换
+# 阶段 1：模板占位符 → 临时唯一标记
+$stage1 = $template.
+    Replace('__REVIEW_CONTEXT__',   " CTX ").
+    Replace('__REVIEW_VCS__',       " VCS ").
+    Replace('__REVIEW_SCOPE__',    " SCP ").
+    Replace('__REVIEW_CHANGES__',   " CHG ")
+# 阶段 2：临时标记 → 实际值
+$prompt = $stage1.
+    Replace(" CTX ", $context).
+    Replace(" VCS ", $(if ($Vcs) { $Vcs } else { '无' })).
+    Replace(" SCP ", $scope).
+    Replace(" CHG ", $changeSection)
+
+# DryRun 模式：仅探测可审核性，不调用 Claude Code
+if ($DryRun) {
+    Write-Host "DryRun: 仓库类型=$(if ($Vcs) { $Vcs } else { '无' })，审核范围=$scope，可审核。" -ForegroundColor Green
+    exit $ExitOK
+}
 
 $exitCode = $ExitErr  # 预设错误，异常路径不会误返回 0
 try {
+    Write-Host "正在调用 Claude Code 进行审核，请稍候..." -ForegroundColor Cyan
     # 非交互调用 claude，仅允许只读工具（diff 已嵌入 prompt，无需 Bash）
     $claudeArgs = @('-p', $prompt, '--allowedTools', 'Read', 'Glob', 'Grep')
     if ($Model) { $claudeArgs += @('--model', $Model) }
 
     $rawOutput = & claude @claudeArgs 2>&1 | Out-String
     $exitCode = $LASTEXITCODE
-    if ($null -eq $exitCode -or $exitCode -eq 0) { $exitCode = $ExitOK }
+    if ($null -eq $exitCode -or $exitCode -eq 0) { $exitCode = $ExitOK } else { $exitCode = $ExitErr }
 
     # 格式校验：检测四个标记行是否存在
     $hasMarkers = ($rawOutput -split "`n") | Where-Object { $_.Trim() -in @('!!!REVIEW-RESULT!!!','!!!CRITICAL!!!','!!!WARNING!!!','!!!SUGGESTION!!!') } | Measure-Object | ForEach-Object { $_.Count -eq 4 }

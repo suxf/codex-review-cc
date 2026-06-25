@@ -39,6 +39,7 @@ description: 调用本机 Claude Code CLI 对当前工作区的代码改动进�
 | -Target      | changes(默认) / staged / commit / base                               |
 | -Base        | Target=base 时的基准点，git 为分支名/tag/commit ref，svn 为修订号     |
 | -Model       | 传给 claude 的模型别名（如 sonnet、opus）                             |
+| -DryRun      | 仅探测 VCS/Files 可审核性，不调用 Claude Code，用于循环审核前置校验          |
 
 ## 退出码
 
