@@ -7,7 +7,7 @@ description: 循环审核模式。调用本机 Claude Code CLI 对当前工作�
 
 循环审核模式。Codex 交替执行审查（通过 Claude Code）与代码修改，直到审核结果中不再包含"严重（必须修复）"级别的问题为止。
 
-复用 `review-cc` 技能的 `scripts/review.ps1` 和 `references/review_prompt.md`，脚本路径在 `~/.codex/skills/review-cc/`。
+复用 `review-cc` 技能的 `scripts/review.ps1` 和 `references/review_prompt.md`，脚本路径为 `<review-cc 技能目录>\scripts\review.ps1`。
 
 ## 前置条件
 
@@ -21,13 +21,13 @@ description: 循环审核模式。调用本机 Claude Code CLI 对当前工作�
 
 ### 每一轮的执行步骤
 
-1. 准备 ContextFile（如 `work/review-context.txt`），写入以下内容：
+1. 准备 ContextFile，每轮使用独立路径（如 `work/review-context-1.txt`、`work/review-context-2.txt`），写入以下内容：
    - 本次功能的设计思路与变更说明
    - 当前是第 N 轮审核（首轮写"第 1 轮"）
    - 非首轮时，额外写入：上一轮发现的严重问题清单、Codex 已做的修改说明
 2. 运行审核脚本：
 
-   `& "~/.codex/skills/review-cc/scripts/review.ps1" -ContextFile "<临时文件路径>"`
+   `& "<review-cc 技能目录>\scripts\review.ps1" -ContextFile "<临时文件路径>"`
 
    非 VCS 目录时加 `-Files "file1.py;file2.js"`。
 
@@ -38,11 +38,12 @@ description: 循环审核模式。调用本机 Claude Code CLI 对当前工作�
 ### 终止条件
 
 - 正常终止：某轮审核结果中"严重（必须修复）"为"无"。
-- 强制终止（防死循环）：超过 10 轮，或连续 2 轮的严重问题完全相同（说明修改未生效）。此时向用户报告卡住的问题，请用户介入。
+- 强制终止（防死循环）：超过 10 轮，或连续 2 轮的严重问题归一化后相同（去除行号、文件路径、空白后的文本相等，说明修改未生效）。此时向用户报告卡住的问题，请用户介入。
+- 错误终止：脚本返回非零退出码（1=错误，2=无改动），应立即停止循环并报告给用户，不要继续下一轮。
 
 ### 编排要求
 
-- 每轮审核结果和 Codex 的修改都要同步告知用户（commentary 频道）。
+- 每轮审核结果和 Codex 的修改都要同步告知用户。
 - 严重问题阻塞循环；警告和建议不阻塞，但最后一轮有则一并报告。
 - Codex 的修改必须针对审核指出的具体问题，不要做无关重构。
 - 不要擅自修改与审核结果无关的代码。

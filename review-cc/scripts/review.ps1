@@ -203,6 +203,7 @@ $prompt = $template.
 $tempPrompt = Join-Path $env:TEMP "review-cc-prompt-$(Get-Random).txt"
 $utf8Enc = New-Object System.Text.UTF8Encoding $false
 try {
+    $exitCode = $ExitErr  # 预设错误，异常路径不会误返回 0
     [System.IO.File]::WriteAllText($tempPrompt, $prompt, $utf8Enc)
     $promptContent = Get-Content $tempPrompt -Raw -Encoding UTF8
 
@@ -215,6 +216,7 @@ try {
     if (-not $exitCode) { $exitCode = $ExitOK }
 }
 finally {
-    Remove-Item $tempPrompt -Force -ErrorAction SilentlyContinue
+    try { Remove-Item $tempPrompt -Force -ErrorAction Stop }
+    catch { Write-Warning "临时文件清理失败: $tempPrompt" }
 }
 exit $exitCode
