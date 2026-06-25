@@ -205,7 +205,7 @@ $utf8Enc = New-Object System.Text.UTF8Encoding $false
 try {
     $exitCode = $ExitErr  # 预设错误，异常路径不会误返回 0
     [System.IO.File]::WriteAllText($tempPrompt, $prompt, $utf8Enc)
-    $promptContent = Get-Content $tempPrompt -Raw -Encoding UTF8
+    $promptContent = $prompt  # 直接复用变量，省去磁盘往返
 
     # 非交互调用 claude，仅允许只读工具（diff 已嵌入 prompt，无需 Bash）
     $claudeArgs = @('-p', $promptContent, '--allowedTools', 'Read', 'Glob', 'Grep')
