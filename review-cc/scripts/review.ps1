@@ -211,9 +211,23 @@ try {
     $claudeArgs = @('-p', $promptContent, '--allowedTools', 'Read', 'Glob', 'Grep')
     if ($Model) { $claudeArgs += @('--model', $Model) }
 
-    & claude @claudeArgs
+    $rawOutput = & claude @claudeArgs 2>&1 | Out-String
     $exitCode = $LASTEXITCODE
     if (-not $exitCode) { $exitCode = $ExitOK }
+
+    # 格式校验：检测标记是否存在
+    $hasMarkers = $rawOutput -match '!!!REVIEW-RESULT!!!' -and $rawOutput -match '!!!CRITICAL!!!' -and $rawOutput -match '!!!WARNING!!!' -and $rawOutput -match '!!!SUGGESTION!!!'
+    if (-not $hasMarkers) {
+        Write-Host ""
+        Write-Host "=== Claude Code 原始输出 ===" -ForegroundColor Yellow
+        Write-Host $rawOutput
+        Write-Host "=== 格式校验失败 ===" -ForegroundColor Red
+        Write-Host "审核输出缺少必要的标记行（!!!REVIEW-RESULT!!! / !!!CRITICAL!!! / !!!WARNING!!! / !!!SUGGESTION!!!），无法程序化提取。" -ForegroundColor Red
+        Write-Host "请人工查看上方原始输出。" -ForegroundColor Yellow
+        $exitCode = $ExitErr
+    } else {
+        Write-Host $rawOutput
+    }
 }
 finally {
     try { Remove-Item $tempPrompt -Force -ErrorAction Stop }
