@@ -1,4 +1,4 @@
 interface:
-  display_name: "Claude Code 代码审核"
-  short_description: "调用 Claude Code CLI 审核当前 git 改动"
-  default_prompt: "审核当前代码改动"
+  display_name: "review-cc"
+  short_description: "调用 Claude Code CLI 审核 git/svn 代码改动"
+  default_prompt: "使用 $review-cc 审核当前代码改动"

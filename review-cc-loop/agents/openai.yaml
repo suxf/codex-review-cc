@@ -1,4 +1,4 @@
 interface:
-  display_name: "Claude Code 循环审核"
-  short_description: "审查-修改循环直到无严重问题"
-  default_prompt: "循环审核当前代码改动直到没有严重问题"
+  display_name: "review-cc-loop"
+  short_description: "调用 Claude Code 循环审核代码改动直到无严重问题"
+  default_prompt: "使用 $review-cc-loop 循环审核代码改动直到无严重问题"
